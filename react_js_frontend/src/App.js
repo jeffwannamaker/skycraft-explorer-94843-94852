@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Sky } from "@react-three/drei";
 import * as THREE from "three";
 import { createNoise2D } from "simplex-noise";
+import skyflyerImage from "./assets/skyflyer.png";
 
 // ======================
 // Utility: Simplex Noise
@@ -501,9 +502,24 @@ function Overlay({ show, engineOn, controls, status, onToggleHelp, showHelp, isP
           position: "absolute", top: "19%", left: "50%", transform: "translateX(-50%)",
           background: "rgba(255,255,255,0.99)", color: "#222", padding: "32px 38px 34px 38px",
           borderRadius: 16, pointerEvents: "auto", fontSize: 17, minWidth: 370,
-          fontWeight: 400, boxShadow: "0 8px 30px rgba(68,116,172,0.09)"
+          fontWeight: 400, boxShadow: "0 8px 30px rgba(68,116,172,0.09)",
+          display: "flex", flexDirection: "column", alignItems: "center",
         }}>
-          <h2 style={{fontWeight:800, marginTop:0, marginBottom:16, color:"#2196f3"}}>Skycraft Explorer</h2>
+          <img
+            src={skyflyerImage}
+            alt="Skyflyer Example"
+            style={{
+              width: 98,
+              height: "auto",
+              marginBottom: 12,
+              borderRadius: 12,
+              boxShadow: "0 3px 16px rgba(60,80,120,0.12)",
+              border: "2px solid #e3eaf3",
+              objectFit: "contain",
+              background: "linear-gradient(white, #f4fcff 87%)"
+            }}
+          />
+          <h2 style={{fontWeight:800, marginTop:0, marginBottom:16, color:"#2196f3", letterSpacing: "0.02em"}}>Skycraft Explorer</h2>
           <ul style={{ listStyle: "none", paddingLeft: 0, lineHeight: 1.86, fontWeight: 500, fontSize: 16, marginBottom:8 }}>
             <li><kbd style={kStyle}>Space</kbd> - Start/Stop Engine</li>
             <li><kbd style={kStyle}>↑</kbd>/<kbd style={kStyle}>↓</kbd> - Pitch Up/Down (Ascend/Descend)</li>
