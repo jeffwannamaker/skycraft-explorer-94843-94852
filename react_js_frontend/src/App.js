@@ -373,6 +373,9 @@ function usePlaneControls(engineOn, setEngineOn, setDesiredControls) {
       updateWanted();
     };
     function updateWanted() {
+      // NEW mapping:
+      // ArrowUp/ArrowDown -> pitch (Up: nose up, Down: nose down)
+      // ArrowLeft/ArrowRight -> yaw (Left: turn/rotate left, Right: turn/rotate right)
       const controls = {
         pitchUp: held.current["ArrowUp"] || held.current["KeyW"] || false,
         pitchDown: held.current["ArrowDown"] || held.current["KeyS"] || false,
@@ -613,10 +616,11 @@ function useFrameImplementation(setPlane, plane, controls) {
           speed = Math.max(MIN_SPEED, speed * DRAG - 0.003);
         }
         // Flight controls
-        if (controls.pitchUp) pitch += PITCH_SPD;
-        if (controls.pitchDown) pitch -= PITCH_SPD;
-        if (controls.turnLeft) yaw += YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52);
-        if (controls.turnRight) yaw -= YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52);
+        // ArrowUp/ArrowDown mapped to pitch, ArrowLeft/ArrowRight mapped to yaw
+        if (controls.pitchUp) pitch += PITCH_SPD; // ArrowUp
+        if (controls.pitchDown) pitch -= PITCH_SPD; // ArrowDown
+        if (controls.turnLeft) yaw += YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52); // ArrowLeft
+        if (controls.turnRight) yaw -= YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52); // ArrowRight
         roll *= 0.93;
         // Position update
         let dx = Math.sin(yaw) * Math.cos(pitch) * speed;
