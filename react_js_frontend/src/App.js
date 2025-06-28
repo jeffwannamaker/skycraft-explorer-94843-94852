@@ -352,15 +352,23 @@ function ThirdPersonCamera({ planePosition, planeRotation }) {
   return null;
 }
 
-// ===============
-// FLIGHT CONTROLS
-// ===============
-function usePlaneControls(engineOn, setEngineOn, setDesiredControls) {
+/*
+ * FLIGHT CONTROLS (incorporates pause logic)
+ * PUBLIC_INTERFACE
+ */
+function usePlaneControls(engineOn, setEngineOn, setDesiredControls, isPaused) {
   // Control state
   const held = useRef({});
-  // Keybinding overlay
   useEffect(() => {
+    if (isPaused) {
+      setDesiredControls({
+        pitchUp: false, pitchDown: false, turnLeft: false, turnRight: false, rollLeft: false, rollRight: false,
+      });
+      return;
+    }
     const handleDown = (e) => {
+      // If paused, absorb controls except for 'P'
+      if (isPaused) return;
       e.preventDefault();
       if (e.code === "Space") {
         setEngineOn((on) => !on);
@@ -369,6 +377,7 @@ function usePlaneControls(engineOn, setEngineOn, setDesiredControls) {
       updateWanted();
     };
     const handleUp = (e) => {
+      if (isPaused) return;
       held.current[e.code] = false;
       updateWanted();
     };
@@ -392,13 +401,15 @@ function usePlaneControls(engineOn, setEngineOn, setDesiredControls) {
       window.removeEventListener("keydown", handleDown);
       window.removeEventListener("keyup", handleUp);
     };
-  }, [setEngineOn, setDesiredControls]);
+    // eslint-disable-next-line
+  }, [setEngineOn, setDesiredControls, isPaused]);
 }
 
-// ======================
-// Game HUD Overlay
-// ======================
-function Overlay({ show, engineOn, controls, status, onToggleHelp, showHelp }) {
+/*
+ * Game HUD Overlay, with Pause/Resume support.
+ * PUBLIC_INTERFACE
+ */
+function Overlay({ show, engineOn, controls, status, onToggleHelp, showHelp, isPaused, onPauseClick }) {
   return (
     <div
       style={{
@@ -410,6 +421,31 @@ function Overlay({ show, engineOn, controls, status, onToggleHelp, showHelp }) {
         color: "#282c34",
       }}
     >
+      {/* Pause button, top right */}
+      {!showHelp && (
+        <button
+          onClick={onPauseClick}
+          aria-label={isPaused ? "Resume Game" : "Pause Game"}
+          style={{
+            position: "absolute",
+            top: 24, right: 38, zIndex: 20,
+            background: isPaused ? "#2196f3" : "#4caf50",
+            color: "#fff",
+            fontWeight: 700,
+            border: "none",
+            borderRadius: 8,
+            padding: "8px 24px",
+            fontSize: 17,
+            boxShadow: "0 2px 9px rgba(0,0,0,0.07)",
+            transition: "background 0.3s",
+            pointerEvents: "auto",
+            cursor: "pointer",
+            opacity: isPaused ? 0.99 : 0.90
+          }}
+        >
+          {isPaused ? "Resume" : "Pause"}
+        </button>
+      )}
       <div style={{
         position: "absolute",
         top: 18, left: 32,
@@ -448,7 +484,8 @@ function Overlay({ show, engineOn, controls, status, onToggleHelp, showHelp }) {
           <span>
             Controls:&nbsp;
             <kbd style={kStyle}>Space</kbd> (Engine) &nbsp;
-            <kbd style={kStyle}>↑/↓</kbd> <kbd style={kStyle}>←/→</kbd> (Fly)
+            <kbd style={kStyle}>↑/↓</kbd> <kbd style={kStyle}>←/→</kbd> (Fly)&nbsp;&nbsp;
+            <kbd style={kStyle}>P</kbd> ({isPaused ? "Resume" : "Pause"})
             &nbsp;&nbsp;
             <button
               onClick={() => onToggleHelp(true)}
@@ -471,6 +508,7 @@ function Overlay({ show, engineOn, controls, status, onToggleHelp, showHelp }) {
             <li><kbd style={kStyle}>Space</kbd> - Start/Stop Engine</li>
             <li><kbd style={kStyle}>↑</kbd>/<kbd style={kStyle}>↓</kbd> - Pitch Up/Down (Ascend/Descend)</li>
             <li><kbd style={kStyle}>←</kbd>/<kbd style={kStyle}>→</kbd> - Turn Left/Right (Yaw)</li>
+            <li><kbd style={kStyle}>P</kbd> - Pause/Resume</li>
             <li style={{ opacity: 0.72 }}>Pro tip: fly low for detail, high for vistas!</li>
             <li style={{ opacity: 0.62 }}>Stay above the terrain or you'll crash. You respawn at start.</li>
           </ul>
@@ -480,6 +518,38 @@ function Overlay({ show, engineOn, controls, status, onToggleHelp, showHelp }) {
               background: "#2196f3", color: "#fff", border: "none", borderRadius: 8, padding: "7px 18px", fontSize: 16, marginTop:5, cursor: "pointer"
             }}
           >Close</button>
+        </div>
+      )}
+      {/* PAUSED OVERLAY */}
+      {isPaused && !showHelp && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(33,33,40,0.36)",
+          zIndex: 30,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "none"
+        }}>
+          <div style={{
+            background: "rgba(255,255,255,0.96)",
+            borderRadius: 20,
+            padding: "44px 68px 45px 68px",
+            fontWeight: 900,
+            fontSize: 46,
+            color: "#282c34",
+            boxShadow: "0 10px 48px rgba(40,52,90,0.13)",
+            position: "relative",
+            textAlign: "center",
+            letterSpacing: "0.03em",
+            pointerEvents: "auto"
+          }}>
+            PAUSED<br />
+            <div style={{ fontWeight: 400, fontSize: 20, marginTop: 6, color: "#2196f3" }}>
+              Press <kbd style={kStyle}>P</kbd> or click Resume
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -497,9 +567,10 @@ const kStyle = {
   margin: "0 2px"
 };
 
-// ===============
-// Main App
-// ===============
+/*
+ * PUBLIC_INTERFACE
+ * Main App for Skycraft Explorer: adds pause/resume logic.
+ */
 function App() {
   // PLANE STATE
   const [plane, setPlane] = useState({
@@ -513,15 +584,35 @@ function App() {
     pitchUp: false, pitchDown: false, turnLeft: false, turnRight: false, rollLeft: false, rollRight: false,
   });
 
-  // For overlays
+  // Overlays
   const [showHelp, setShowHelp] = useState(false);
 
-  // Control hook
+  // PAUSE STATE
+  const [isPaused, setIsPaused] = useState(false);
+
+  // Keyboard shortcut: P for pause/resume
+  useEffect(() => {
+    const handler = (e) => {
+      if (
+        // Focus-safe, ignore if inside input/textarea/button
+        !(e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON'))
+      ) {
+        if ((e.code === "KeyP" || e.key === "p" || e.key === "P") && !showHelp) {
+          setIsPaused(paused => !paused);
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [showHelp]);
+
+
+  // Control hook: pass pause state
   usePlaneControls(plane.engineOn, (eng) =>
-    setPlane(p => ({ ...p, engineOn: eng })), setDesiredControls);
+    setPlane(p => ({ ...p, engineOn: eng })), setDesiredControls, isPaused);
 
   // MAIN GAME LOOP
-  useFrameImplementation(setPlane, plane, desiredControls);
+  useFrameImplementation(setPlane, plane, desiredControls, isPaused);
 
   // For overlays (km/h, etc)
   const status = {
@@ -543,9 +634,14 @@ function App() {
     }
   }, [plane.position]);
 
+  // Pause button press handler for UI
+  const handlePauseClick = () => {
+    setIsPaused(paused => !paused);
+  };
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "#f8f9fa" }}>
-      {/* 3D Render */}
+      {/* 3D Render: still rendered so scene stays visible */}
       <Canvas
         style={{ position: "absolute", inset: 0 }}
         shadows
@@ -595,91 +691,99 @@ function App() {
         status={status}
         onToggleHelp={setShowHelp}
         showHelp={showHelp}
+        isPaused={isPaused}
+        onPauseClick={handlePauseClick}
       />
     </div>
   );
 }
 
-function useFrameImplementation(setPlane, plane, controls) {
-  // Custom useFrame: physics, control, flight math
+/*
+ * Game loop/physics updater, supports pausing.
+ * PUBLIC_INTERFACE
+ */
+function useFrameImplementation(setPlane, plane, controls, isPaused) {
+  // Custom useFrame: physics, control, flight math.
   useEffect(() => {
     let anim;
     function step() {
-      setPlane((prev) => {
-        let { position, rotation, speed, engineOn } = prev;
-        // Deconstruct to: [pitch, yaw, roll], as standard airplane axes.
-        let [pitch, yaw, roll] = rotation;
+      if (!isPaused) {
+        setPlane((prev) => {
+          let { position, rotation, speed, engineOn } = prev;
+          // Deconstruct to: [pitch, yaw, roll], as standard airplane axes.
+          let [pitch, yaw, roll] = rotation;
 
-        // Flight physics: engine/throttle
-        if (engineOn) {
-          // Accelerate on ground, then flight
-          speed = Math.min(MAX_SPEED, speed + ENGINE_ACCEL * (1.0 - speed / MAX_SPEED));
-        } else {
-          speed = Math.max(MIN_SPEED, speed * DRAG - 0.003);
-        }
-        // Control conventions:
-        // Pitch (X axis, nose up/down): ArrowUp = pitch up (increase pitch, nose up, positive X), ArrowDown = pitch down (decrease pitch, nose down)
-        // Yaw (Y axis, left/right): ArrowLeft = yaw left (increase yaw), ArrowRight = yaw right (decrease yaw)
+          // Flight physics: engine/throttle
+          if (engineOn) {
+            // Accelerate on ground, then flight
+            speed = Math.min(MAX_SPEED, speed + ENGINE_ACCEL * (1.0 - speed / MAX_SPEED));
+          } else {
+            speed = Math.max(MIN_SPEED, speed * DRAG - 0.003);
+          }
+          // Control conventions:
+          // Pitch (X axis, nose up/down): ArrowUp = pitch up (increase pitch, nose up, positive X), ArrowDown = pitch down (decrease pitch, nose down)
+          // Yaw (Y axis, left/right): ArrowLeft = yaw left (increase yaw), ArrowRight = yaw right (decrease yaw)
 
-        // NOTE: ArrowUp = pitch up = nose up = increase pitch (positive X axis rotation)
-        if (controls.pitchUp) pitch += PITCH_SPD;
-        if (controls.pitchDown) pitch -= PITCH_SPD;
-        if (controls.turnLeft) yaw += YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52);
-        if (controls.turnRight) yaw -= YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52);
-        roll *= 0.93;
+          // NOTE: ArrowUp = pitch up = nose up = increase pitch (positive X axis rotation)
+          if (controls.pitchUp) pitch += PITCH_SPD;
+          if (controls.pitchDown) pitch -= PITCH_SPD;
+          if (controls.turnLeft) yaw += YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52);
+          if (controls.turnRight) yaw -= YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52);
+          roll *= 0.93;
 
-        // Clamp pitch to prevent flipping over (e.g. ~-90deg to +90deg)
-        const maxPitch = Math.PI / 2 - 0.07;
-        if (pitch > maxPitch) pitch = maxPitch;
-        if (pitch < -maxPitch) pitch = -maxPitch;
-        // Wrap yaw
-        if (yaw > Math.PI) yaw -= 2 * Math.PI;
-        if (yaw < -Math.PI) yaw += 2 * Math.PI;
+          // Clamp pitch to prevent flipping over (e.g. ~-90deg to +90deg)
+          const maxPitch = Math.PI / 2 - 0.07;
+          if (pitch > maxPitch) pitch = maxPitch;
+          if (pitch < -maxPitch) pitch = -maxPitch;
+          // Wrap yaw
+          if (yaw > Math.PI) yaw -= 2 * Math.PI;
+          if (yaw < -Math.PI) yaw += 2 * Math.PI;
 
-        // Calculate the forward direction in world space using pitch AND yaw for climb/descent
-        // Rotation order: yaw (Y), then pitch (X)
-        // The airplane's forward vector under given pitch/yaw:
-        const forward = new THREE.Vector3(0, 0, 1); // forward in local airplane Z
-        const m = new THREE.Matrix4();
-        m.makeRotationFromEuler(new THREE.Euler(pitch, yaw, 0, 'XYZ'));
-        forward.applyMatrix4(m).normalize();
+          // Calculate the forward direction in world space using pitch AND yaw for climb/descent
+          // Rotation order: yaw (Y), then pitch (X)
+          // The airplane's forward vector under given pitch/yaw:
+          const forward = new THREE.Vector3(0, 0, 1); // forward in local airplane Z
+          const m = new THREE.Matrix4();
+          m.makeRotationFromEuler(new THREE.Euler(pitch, yaw, 0, 'XYZ'));
+          forward.applyMatrix4(m).normalize();
 
-        // Move along forward direction at current speed
-        let dx = forward.x * speed;
-        let dy = forward.y * speed;
-        let dz = forward.z * speed;
+          // Move along forward direction at current speed
+          let dx = forward.x * speed;
+          let dy = forward.y * speed;
+          let dz = forward.z * speed;
 
-        // Simple stall if too slow
-        if (speed < 0.11 && position[1] > 3) dy -= 0.044;
-        // Gravity, only when above ground
-        if (position[1] > terrainHeight(position[0], position[2]) + 0.2) {
-          dy -= 0.0091;
-        }
-        // Elevator stop at ground
-        if (position[1] + dy < terrainHeight(position[0] + dx, position[2] + dz) + 0.24) {
-          dy = terrainHeight(position[0] + dx, position[2] + dz) + 0.24 - position[1];
-        }
-        // Move
-        const newPos = [
-          position[0] + dx,
-          position[1] + dy,
-          position[2] + dz,
-        ];
-        // Clamp to max height above terrain
-        newPos[1] = Math.max(newPos[1], terrainHeight(newPos[0], newPos[2]) + 0.22);
-        return {
-          ...prev,
-          position: newPos,
-          speed,
-          rotation: [pitch, yaw, roll],
-        };
-      });
+          // Simple stall if too slow
+          if (speed < 0.11 && position[1] > 3) dy -= 0.044;
+          // Gravity, only when above ground
+          if (position[1] > terrainHeight(position[0], position[2]) + 0.2) {
+            dy -= 0.0091;
+          }
+          // Elevator stop at ground
+          if (position[1] + dy < terrainHeight(position[0] + dx, position[2] + dz) + 0.24) {
+            dy = terrainHeight(position[0] + dx, position[2] + dz) + 0.24 - position[1];
+          }
+          // Move
+          const newPos = [
+            position[0] + dx,
+            position[1] + dy,
+            position[2] + dz,
+          ];
+          // Clamp to max height above terrain
+          newPos[1] = Math.max(newPos[1], terrainHeight(newPos[0], newPos[2]) + 0.22);
+          return {
+            ...prev,
+            position: newPos,
+            speed,
+            rotation: [pitch, yaw, roll],
+          };
+        });
+      }
       anim = requestAnimationFrame(step);
     }
     anim = requestAnimationFrame(step);
     return () => cancelAnimationFrame(anim);
     // eslint-disable-next-line
-  }, [setPlane, controls, plane.engineOn]);
+  }, [setPlane, controls, plane.engineOn, isPaused]);
 }
 
 export default App;
