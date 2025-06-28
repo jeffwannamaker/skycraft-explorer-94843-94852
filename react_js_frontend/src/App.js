@@ -86,7 +86,7 @@ function Airplane({ position, rotation, engineOn }) {
       {engineOn && (
         <mesh position={[0, 0, 0.79]}>
           <sphereGeometry args={[0.05, 8, 7]} />
-          <meshBasicMaterial color="#ffeb3b" emissive="#ffeb3b" />
+          <meshBasicMaterial color="#ffeb3b" />
         </mesh>
       )}
     </group>
