@@ -1,16 +1,16 @@
-import React, { useRef, useState, useEffect, Suspense, useCallback } from "react";
-import { Canvas, useFrame, extend, useThree } from "@react-three/fiber";
-import { OrbitControls, Sky, Html } from "@react-three/drei";
+import React, { useRef, useState, useEffect, Suspense, useCallback, useMemo } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Sky } from "@react-three/drei";
 import * as THREE from "three";
+import { createNoise2D } from "simplex-noise";
 
 // ======================
 // Utility: Simplex Noise
 // ======================
-import { createNoise2D } from "simplex-noise";
 const simplex = createNoise2D();
 
 // ========================
-// Plane Controls & Physics
+// Plane Controls, Physics
 // ========================
 const PLANE_INITIAL = {
   position: [0, 3, 0],
@@ -27,9 +27,9 @@ const MIN_SPEED = 0.08;
 const ENGINE_ACCEL = 0.0035;
 const DRAG = 0.998;
 const LIFT_FACTOR = 0.022;
-const PITCH_SPD = 0.019;    // Up/Down
-const YAW_SPD = 0.017;      // Turn Left/Right
-const ROLL_SPD = 0.027;     // Roll Left/Right
+const PITCH_SPD = 0.019;
+const YAW_SPD = 0.017;
+const ROLL_SPD = 0.027;
 
 // ===================================
 // Minecraft-Style Procedural Terrain
@@ -38,20 +38,18 @@ function terrainHeight(x, z) {
   // Simple 2D simplex-based terrain. Adjust frequency/ampl.
   return (
     simplex(x * 0.08, z * 0.08) * 3 +
-    simplex(x * 0.22, z * 0.22) * 1 + // "hilliness"
+    simplex(x * 0.22, z * 0.22) * 1 +
     0 // base
   );
 }
 
-// ================
-// 3D WORLD
-// ================
-
-// Plane mesh (minimal "blocky" style)
+// ==========
+// Airplane
+// ==========
 function Airplane({ position, rotation, engineOn }) {
   const group = useRef();
 
-  // Wing and tail accents colors
+  // Wing and tail accent colors
   const bodyColor = "#2196f3";
   const accentColor = "#ffeb3b";
   const secondaryColor = "#4caf50";
@@ -95,16 +93,16 @@ function Airplane({ position, rotation, engineOn }) {
   );
 }
 
-// ================
+// ===========
 // Clouds
-// ================
+// ===========
 function Cloud({ position, scale = 1.0 }) {
   // Blocky cloud, made of boxes
   return (
     <group position={position} scale={[scale, scale, scale]}>
       {[0, 0.5, -0.6].map((dz, i) => (
         <mesh key={i} position={[0.1 * i, 0, dz]}>
-          <boxGeometry args={[0.8 + 0.2 * Math.random(), 0.26, 0.6]} />
+          <boxGeometry args={[0.8 + 0.2 * (i % 2 ? 1 : 0), 0.26, 0.6]} />
           <meshStandardMaterial color="#fff" roughness={0.89} metalness={0.1} opacity={0.7} transparent />
         </mesh>
       ))}
@@ -112,18 +110,16 @@ function Cloud({ position, scale = 1.0 }) {
   );
 }
 
-// ================
+// =======
 // Trees
-// ================
+// =======
 function Tree({ position }) {
   return (
     <group position={position}>
-      {/* Trunk */}
       <mesh>
         <cylinderGeometry args={[0.07, 0.09, 0.7, 6]} />
         <meshStandardMaterial color="#795548" />
       </mesh>
-      {/* Leaves */}
       <mesh position={[0, 0.5, 0]}>
         <sphereGeometry args={[0.27, 7, 7]} />
         <meshStandardMaterial color="#388e3c" />
@@ -132,11 +128,10 @@ function Tree({ position }) {
   );
 }
 
-// ================
-// Building
-// ================
+// ==========
+// Buildings
+// ==========
 function Building({ position, size }) {
-  // Simple cuboid "block" buildings
   return (
     <mesh position={position} castShadow receiveShadow>
       <boxGeometry args={size} />
@@ -145,11 +140,10 @@ function Building({ position, size }) {
   );
 }
 
-// =========================
-// Runway (for Takeoff)
-// =========================
+// ==========
+// Runway
+// ==========
 function Runway({ xStart = -12, xEnd = 28, width = 3 }) {
-  // Draw as a long, flat, dark rectangle
   const length = xEnd - xStart;
   return (
     <mesh position={[(xStart + xEnd) / 2, 0.032, 0]}>
@@ -159,88 +153,168 @@ function Runway({ xStart = -12, xEnd = 28, width = 3 }) {
   );
 }
 
-// ======================
-// Procedural Terrain
-// ======================
+// =====================
+// Procedural Terrain (InstancedMesh version)
+// =====================
 const TERRAIN_SIZE = 66;
-const TERRAIN_RES = 1.33; // block size
-const TERRAIN_CHUNKS = 2; // sides visible from plane center
+const TERRAIN_RES = 1.33;
+const TERRAIN_CHUNKS = 2;
+
+const MemoizedTerrainChunk = React.memo(TerrainChunk);
 
 function ProceduralTerrain({ position = [0, 0, 0] }) {
-  // Instead of voxels, render a mesh for each (x,z) grid cell.
-  // Color by height: green for low, yellow for mid, white for high
+  // Only recalc visible chunks when position crosses into a new terrain area
+  const roundedPosition = useMemo(
+    () => [
+      Math.round(position[0] / TERRAIN_SIZE) * TERRAIN_SIZE,
+      0,
+      Math.round(position[2] / TERRAIN_SIZE) * TERRAIN_SIZE,
+    ],
+    [position[0], position[2]]
+  );
   const meshes = [];
   for (let cx = -TERRAIN_CHUNKS; cx <= TERRAIN_CHUNKS; cx++) {
     for (let cz = -TERRAIN_CHUNKS; cz <= TERRAIN_CHUNKS; cz++) {
       meshes.push(
-        <TerrainChunk key={cx + ";" + cz} chunkX={cx} chunkZ={cz} center={position} />
+        <MemoizedTerrainChunk
+          key={cx + ";" + cz}
+          chunkX={cx}
+          chunkZ={cz}
+          base={roundedPosition}
+        />
       );
     }
   }
   return <>{meshes}</>;
 }
-function TerrainChunk({ chunkX, chunkZ, center }) {
+
+function TerrainChunk({ chunkX, chunkZ, base }) {
   const n = TERRAIN_SIZE / 2;
-  const baseX = Math.round(center[0] / TERRAIN_SIZE) * TERRAIN_SIZE + chunkX * TERRAIN_SIZE;
-  const baseZ = Math.round(center[2] / TERRAIN_SIZE) * TERRAIN_SIZE + chunkZ * TERRAIN_SIZE;
-  // Instanced mesh for performance (all blocks are "boxes")
-  const boxMeshes = [];
-  for (let x = -n; x < n; x += TERRAIN_RES) {
-    for (let z = -n; z < n; z += TERRAIN_RES) {
-      const worldX = baseX + x;
-      const worldZ = baseZ + z;
-      const h = terrainHeight(worldX, worldZ);
-      // Layered coloring: low = green, mid = yellow/green, high = white
-      let color = "#4caf50";
-      if (h > 3.8) color = "#f5f5f5";
-      else if (h > 2.2) color = "#fffde7";
-      else if (h > 1.2) color = "#8bc34a";
-      boxMeshes.push(
-        <mesh
-          key={x + "," + z}
-          position={[worldX, h / 2, worldZ]}
-          castShadow
-          receiveShadow
-        >
-          <boxGeometry args={[TERRAIN_RES, h || 0.6, TERRAIN_RES]} />
-          <meshStandardMaterial color={color} />
-        </mesh>
-      );
+  const baseX = base[0] + chunkX * TERRAIN_SIZE;
+  const baseZ = base[2] + chunkZ * TERRAIN_SIZE;
+
+  // Compute instance transforms and colors (one color per chunk for performance)
+  const terrainData = useMemo(() => {
+    const transforms = [];
+    for (let x = -n; x < n; x += TERRAIN_RES) {
+      for (let z = -n; z < n; z += TERRAIN_RES) {
+        const worldX = baseX + x;
+        const worldZ = baseZ + z;
+        const h = terrainHeight(worldX, worldZ);
+        transforms.push({
+          pos: [worldX, h / 2, worldZ],
+          scaleY: h || 0.6,
+        });
+      }
     }
-  }
-  return <>{boxMeshes}</>;
+    return transforms;
+  }, [baseX, baseZ]);
+
+  // InstancedMesh
+  // One color per chunk: choose color dynamically based on avg height
+  const avgHeight =
+    terrainData.reduce((sum, t) => sum + t.scaleY, 0) / terrainData.length;
+  let color = "#4caf50";
+  if (avgHeight > 3.8) color = "#f5f5f5";
+  else if (avgHeight > 2.2) color = "#fffde7";
+  else if (avgHeight > 1.2) color = "#8bc34a";
+
+  const meshRef = useRef();
+
+  useEffect(() => {
+    if (!meshRef.current) return;
+    for (let i = 0; i < terrainData.length; i++) {
+      const { pos, scaleY } = terrainData[i];
+      const m = new THREE.Matrix4();
+      m.compose(
+        new THREE.Vector3(...pos),
+        new THREE.Quaternion(),
+        new THREE.Vector3(1, scaleY, 1)
+      );
+      meshRef.current.setMatrixAt(i, m);
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true;
+  }, [terrainData]);
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, terrainData.length]}
+      castShadow
+      receiveShadow
+    >
+      <boxGeometry args={[TERRAIN_RES, 1, TERRAIN_RES]} />
+      <meshStandardMaterial color={color} />
+    </instancedMesh>
+  );
 }
 
-// =========
-// World
-// =========
+// ==========
+// WorldObjects (optimized, deterministic)
+// ==========
 function WorldObjects({ planePos }) {
-  // Clouds, trees, buildings distributed randomly
-  const clouds = [];
-  const trees = [];
-  const buildings = [];
-  // Clouds in a cube above you
-  for (let i = 0; i < 18; i++) {
-    const x = planePos[0] + (Math.random() - 0.5) * 40 + (i*7) % 33;
-    const z = planePos[2] + (Math.random() - 0.5) * 40 + (i*17) % 22;
-    const y = 8 + Math.random() * 6;
-    clouds.push(<Cloud position={[x, y, z]} key={"cloud-" + i} scale={Math.random() * 0.85 + 0.8} />);
+  // Deterministic but scattered distribution
+  const worldSeed = 42;
+  function seededRandom(seed, i) {
+    let x = Math.sin(seed + i * 4391.643) * 10000;
+    return x - Math.floor(x);
   }
-  // Sparse trees, buildings
-  for (let i = 0; i < 34; i++) {
-    const x = planePos[0] + (Math.random() - 0.5) * 64 + (i*13)%37;
-    const z = planePos[2] + (Math.random() - 0.5) * 64 + (i*7)%31;
-    const h = terrainHeight(x, z);
-    if ((Math.abs(x) < 6 && Math.abs(z) < 4.5)) continue; // Avoid runway/center
-    if ((i % 9) !== 0) trees.push(<Tree position={[x, h + 0.35, z]} key={"tree-" + i} />);
-    else buildings.push(
-      <Building
-        position={[x, h + 0.52, z]}
-        size={[1.1, 1.07 + Math.random() * 2, 1.1]}
-        key={"building-" + i}
-      />
-    );
-  }
+
+  const clouds = useMemo(() => {
+    const arr = [];
+    for (let i = 0; i < 18; i++) {
+      const rx = seededRandom(worldSeed, i);
+      const rz = seededRandom(worldSeed + 1000, i);
+      const ry = seededRandom(worldSeed + 2000, i);
+      const scaleRnd = seededRandom(worldSeed + 3000, i);
+      const x = planePos[0] + (rx - 0.5) * 40 + (i * 7) % 33;
+      const z = planePos[2] + (rz - 0.5) * 40 + (i * 17) % 22;
+      const y = 8 + ry * 6;
+      arr.push(
+        <Cloud position={[x, y, z]} key={"cloud-" + i} scale={scaleRnd * 0.85 + 0.8} />
+      );
+    }
+    return arr;
+    // eslint-disable-next-line
+  }, [Math.floor(planePos[0] / 33), Math.floor(planePos[2] / 22)]);
+
+  const trees = useMemo(() => {
+    const arr = [];
+    for (let i = 0; i < 32; i++) {
+      const rx = seededRandom(worldSeed + 5000, i);
+      const rz = seededRandom(worldSeed + 6000, i);
+      const x = planePos[0] + (rx - 0.5) * 64 + (i * 13) % 37;
+      const z = planePos[2] + (rz - 0.5) * 64 + (i * 7) % 31;
+      const h = terrainHeight(x, z);
+      if (Math.abs(x) < 6 && Math.abs(z) < 4.5) continue;
+      if ((i % 9) !== 0) arr.push(<Tree position={[x, h + 0.35, z]} key={"tree-" + i} />);
+    }
+    return arr;
+    // eslint-disable-next-line
+  }, [Math.floor(planePos[0] / 37), Math.floor(planePos[2] / 31)]);
+
+  const buildings = useMemo(() => {
+    const arr = [];
+    for (let i = 0; i < 32; i++) {
+      const rx = seededRandom(worldSeed + 7000, i);
+      const rz = seededRandom(worldSeed + 8000, i);
+      if ((i % 9) === 0) {
+        const x = planePos[0] + (rx - 0.5) * 64 + (i * 13) % 37;
+        const z = planePos[2] + (rz - 0.5) * 64 + (i * 7) % 31;
+        const h = terrainHeight(x, z);
+        arr.push(
+          <Building
+            position={[x, h + 0.52, z]}
+            size={[1.1, 1.07 + seededRandom(worldSeed + 9000, i) * 2, 1.1]}
+            key={"building-" + i}
+          />
+        );
+      }
+    }
+    return arr;
+    // eslint-disable-next-line
+  }, [Math.floor(planePos[0] / 37), Math.floor(planePos[2] / 31)]);
+
   return (
     <>
       <Runway />
@@ -251,28 +325,24 @@ function WorldObjects({ planePos }) {
   );
 }
 
-// ================
-// CAMERA
-// ================
+// ==========
+// CAMERA (Optimized no extra rerenders)
+// ==========
 function ThirdPersonCamera({ planePosition, planeRotation }) {
   const { camera } = useThree();
 
   useFrame(() => {
-    // Offset behind and above plane
     const cameraDistance = 7.8;
     const cameraHeight = 2.89;
-    // Plane's yaw
     const yaw = planeRotation[1];
     const behindX = Math.sin(yaw) * -cameraDistance;
     const behindZ = Math.cos(yaw) * -cameraDistance;
-    // Interpolate smoothly to avoid camera stutter
     const target = new THREE.Vector3(
       planePosition[0] + behindX,
       planePosition[1] + cameraHeight,
       planePosition[2] + behindZ
     );
-    camera.position.lerp(target, 0.22);
-    // Look at airplane
+    camera.position.lerp(target, 0.25);
     camera.lookAt(
       planePosition[0],
       planePosition[1] + 0.4,
@@ -292,7 +362,6 @@ function usePlaneControls(engineOn, setEngineOn, setDesiredControls) {
   useEffect(() => {
     const handleDown = (e) => {
       e.preventDefault();
-      // Engine
       if (e.code === "Space") {
         setEngineOn((on) => !on);
       }
@@ -314,7 +383,6 @@ function usePlaneControls(engineOn, setEngineOn, setDesiredControls) {
       };
       setDesiredControls(controls);
     }
-    // Attach
     window.addEventListener("keydown", handleDown);
     window.addEventListener("keyup", handleUp);
     return () => {
@@ -324,9 +392,9 @@ function usePlaneControls(engineOn, setEngineOn, setDesiredControls) {
   }, [setEngineOn, setDesiredControls]);
 }
 
-// =====================
+// ======================
 // Game HUD Overlay
-// =====================
+// ======================
 function Overlay({ show, engineOn, controls, status, onToggleHelp, showHelp }) {
   return (
     <div
@@ -480,40 +548,41 @@ function App() {
         shadows
         camera={{ fov: 69, near: 0.1, far: 250, position: [0, 10, 18] }}
         gl={{ antialias: true }}
-        dpr={window.devicePixelRatio}
+        dpr={Math.min(window.devicePixelRatio, 1.5)}
       >
-        <color attach="background" args={["#eef7ff"]} />
-        {/* Sunlight */}
-        <directionalLight
-          position={[20, 19, 0]}
-          intensity={1.37}
-          castShadow
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
-          shadow-bias={-0.00022}
-        />
-        {/* Ambient light */}
-        <ambientLight intensity={0.68} />
-        {/* 3D Sky */}
-        <Sky
-          distance={428}
-          sunPosition={[45, 42, -110]}
-          turbidity={17}
-          rayleigh={1.9}
-          mieCoefficient={0.017}
-          mieDirectionalG={0.93}
-          inclination={0.39}
-          azimuth={0.25}
-        />
-        {/* Camera Logic */}
-        <ThirdPersonCamera planePosition={plane.position} planeRotation={plane.rotation} />
-        {/* Procedural Terrain */}
-        <ProceduralTerrain position={plane.position} />
-        {/* World Objects */}
-        <WorldObjects planePos={plane.position} />
-        {/* Your Airplane */}
-        <Airplane position={plane.position} rotation={plane.rotation} engineOn={plane.engineOn} />
-        {/* Shadows */}
+        <Suspense fallback={null}>
+          <color attach="background" args={["#eef7ff"]} />
+          {/* Sunlight */}
+          <directionalLight
+            position={[20, 19, 0]}
+            intensity={1.37}
+            castShadow
+            shadow-mapSize-width={2048}
+            shadow-mapSize-height={2048}
+            shadow-bias={-0.00022}
+          />
+          {/* Ambient light */}
+          <ambientLight intensity={0.68} />
+          {/* 3D Sky */}
+          <Sky
+            distance={428}
+            sunPosition={[45, 42, -110]}
+            turbidity={17}
+            rayleigh={1.9}
+            mieCoefficient={0.017}
+            mieDirectionalG={0.93}
+            inclination={0.39}
+            azimuth={0.25}
+          />
+          {/* Camera Logic */}
+          <ThirdPersonCamera planePosition={plane.position} planeRotation={plane.rotation} />
+          {/* Procedural Terrain */}
+          <ProceduralTerrain position={plane.position} />
+          {/* World Objects */}
+          <WorldObjects planePos={plane.position} />
+          {/* Your Airplane */}
+          <Airplane position={plane.position} rotation={plane.rotation} engineOn={plane.engineOn} />
+        </Suspense>
       </Canvas>
       {/* Overlays */}
       <Overlay
@@ -543,15 +612,11 @@ function useFrameImplementation(setPlane, plane, controls) {
         } else {
           speed = Math.max(MIN_SPEED, speed * DRAG - 0.003);
         }
-        // Flight controls (simplified)
-        // Pitch
+        // Flight controls
         if (controls.pitchUp) pitch += PITCH_SPD;
         if (controls.pitchDown) pitch -= PITCH_SPD;
-        // Yaw
         if (controls.turnLeft) yaw += YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52);
         if (controls.turnRight) yaw -= YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52);
-        // (Optional: roll for realism)
-        // Flatten roll
         roll *= 0.93;
         // Position update
         let dx = Math.sin(yaw) * Math.cos(pitch) * speed;
@@ -575,7 +640,6 @@ function useFrameImplementation(setPlane, plane, controls) {
         ];
         // Clamp to max height
         newPos[1] = Math.max(newPos[1], terrainHeight(newPos[0], newPos[2]) + 0.22);
-        // Return updated state
         return {
           ...prev,
           position: newPos,
