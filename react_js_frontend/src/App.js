@@ -607,7 +607,9 @@ function useFrameImplementation(setPlane, plane, controls) {
     function step() {
       setPlane((prev) => {
         let { position, rotation, speed, engineOn } = prev;
-        let [yaw, pitch, roll] = rotation;
+        // Deconstruct to: [pitch, yaw, roll], as standard airplane axes.
+        let [pitch, yaw, roll] = rotation;
+
         // Flight physics: engine/throttle
         if (engineOn) {
           // Accelerate on ground, then flight
@@ -615,17 +617,31 @@ function useFrameImplementation(setPlane, plane, controls) {
         } else {
           speed = Math.max(MIN_SPEED, speed * DRAG - 0.003);
         }
-        // Flight controls
-        // ArrowUp/ArrowDown mapped to pitch, ArrowLeft/ArrowRight mapped to yaw
-        if (controls.pitchUp) pitch += PITCH_SPD; // ArrowUp
-        if (controls.pitchDown) pitch -= PITCH_SPD; // ArrowDown
-        if (controls.turnLeft) yaw += YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52); // ArrowLeft
-        if (controls.turnRight) yaw -= YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52); // ArrowRight
+        // Control conventions:
+        // Pitch (X axis, nose up/down): ArrowUp = pitch up (decrease pitch), ArrowDown = pitch down (increase pitch)
+        // Yaw (Y axis, left/right): ArrowLeft = yaw left (increase yaw), ArrowRight = yaw right (decrease yaw)
+
+        if (controls.pitchUp) pitch += PITCH_SPD; // ArrowUp (pitch up = nose up, increases X)
+        if (controls.pitchDown) pitch -= PITCH_SPD; // ArrowDown (pitch down = nose down, decreases X)
+        if (controls.turnLeft) yaw += YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52); // ArrowLeft (turn left = positive yaw)
+        if (controls.turnRight) yaw -= YAW_SPD * (speed > MIN_SPEED ? 1 : 0.52); // ArrowRight (turn right = negative yaw)
         roll *= 0.93;
-        // Position update
+        // Clamp pitch to prevent flipping over (e.g. ~-90deg to +90deg)
+        const maxPitch = Math.PI / 2 - 0.07;
+        if (pitch > maxPitch) pitch = maxPitch;
+        if (pitch < -maxPitch) pitch = -maxPitch;
+        // Wrap yaw
+        if (yaw > Math.PI) yaw -= 2 * Math.PI;
+        if (yaw < -Math.PI) yaw += 2 * Math.PI;
+
+        // Position update: X axis is right/left, Y is up, Z is forward (plane-forward).
+        // Forward direction:
+        //  Plane's heading in world: yaw = rotation around Y (vertical), pitch = rotation around X (side-to-side)
+        //  Three.js airplane orientation convention: match axes.
         let dx = Math.sin(yaw) * Math.cos(pitch) * speed;
         let dz = Math.cos(yaw) * Math.cos(pitch) * speed;
         let dy = Math.sin(pitch) * speed;
+
         // Simple stall if too slow
         if (speed < 0.11 && position[1] > 3) dy -= 0.044;
         // Gravity
@@ -648,7 +664,7 @@ function useFrameImplementation(setPlane, plane, controls) {
           ...prev,
           position: newPos,
           speed,
-          rotation: [yaw, pitch, roll],
+          rotation: [pitch, yaw, roll],
         };
       });
       anim = requestAnimationFrame(step);
