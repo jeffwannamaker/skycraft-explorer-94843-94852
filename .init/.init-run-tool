@@ -1,4 +1,0 @@
-{
-    "command": "PORT=<port> HOST=<host> BROWSER=none npm start",
-    "working_directory": "/home/kavia/workspace/code-generation/skycraft-explorer-94843-94852/react_js_frontend"
-}
